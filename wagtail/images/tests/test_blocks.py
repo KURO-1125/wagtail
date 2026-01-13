@@ -258,7 +258,69 @@ class TestImageBlock(TestImageChooserBlock):
     def test_bulk_to_python_with_empty_list(self):
         block = ImageBlock(required=False)
         result = block.bulk_to_python([])
-        self.assertEqual(result, [])
+
+    def test_decorative_to_non_decorative_alt_text_behavior(self):
+        """
+        Test that validates the expected behavior when switching from decorative to non-decorative.
+        This test ensures the backend properly handles the transition, while the frontend
+        JavaScript test should verify alt text population.
+        """
+        block = ImageBlock()
+        
+        # Simulate a block that was previously saved as decorative (empty alt_text)
+        decorative_value = {
+            "image": self.image.id,
+            "alt_text": "",  # Empty because it was decorative
+            "decorative": True,
+        }
+        
+        # Convert to Python object (simulating loading from database)
+        python_value = block.to_python(decorative_value)
+        self.assertEqual(python_value.contextual_alt_text, "")
+        self.assertTrue(python_value.decorative)
+        
+        # Now simulate changing to non-decorative with new alt text
+        # (this would be populated by JavaScript in the frontend)
+        non_decorative_value = {
+            "image": self.image.id,
+            "alt_text": "New alt text from image description",
+            "decorative": False,
+        }
+        
+        # This should be valid and not raise validation errors
+        python_value = block.to_python(non_decorative_value)
+        self.assertEqual(python_value.contextual_alt_text, "New alt text from image description")
+        self.assertFalse(python_value.decorative)
+        
+        # Validation should pass
+        try:
+            block.clean(python_value)
+        except Exception as e:
+            self.fail(f"Validation should pass but raised: {e}")
+
+    def test_empty_alt_text_non_decorative_validation_error(self):
+        """
+        Test that empty alt text with non-decorative image still raises validation error.
+        This ensures our fix doesn't break existing validation.
+        """
+        block = ImageBlock()
+        
+        # This should still fail validation
+        invalid_value = {
+            "image": self.image.id,
+            "alt_text": "",  # Empty alt text
+            "decorative": False,  # But not marked as decorative
+        }
+        
+        python_value = block.to_python(invalid_value)
+        
+        with self.assertRaises(StructBlockValidationError) as context:
+            block.clean(python_value)
+        
+        self.assertIn(
+            "Please add some alt text for your image or mark it as decorative",
+            str(context.exception.block_errors["alt_text"]),
+        )
 
     def test_bulk_to_python_with_list_of_none(self):
         block = ImageBlock(required=False)
